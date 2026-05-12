@@ -22,7 +22,7 @@ struct Node
 struct
 {
   void *start;
-  atomic<void *> current;
+  atomic<char *> current;
   size_t size;
 } pool;
 
@@ -46,15 +46,7 @@ static void release_pool()
 
 static inline void *alloc_pool(unsigned n)
 {
-  while (true)
-  {
-    void *current = pool.current.load();
-    auto result = reinterpret_cast<char *>(current) - n;
-    if (pool.current.compare_exchange_weak(current, result))
-    {
-      return result;
-    }
-  }
+  return pool.current.fetch_sub(n, memory_order_relaxed) - n;
 }
 
 static inline Node *create_list(unsigned long n)
