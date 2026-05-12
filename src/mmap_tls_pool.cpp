@@ -8,17 +8,9 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/mman.h>
+#include "lib/commons.cpp"
 
 using namespace std;
-
-static void get_usage(struct rusage &usage)
-{
-  if (getrusage(RUSAGE_SELF, &usage))
-  {
-    perror("Cannot get usage");
-    exit(EXIT_SUCCESS);
-  }
-}
 
 struct Node
 {
@@ -33,67 +25,18 @@ struct
   size_t size;
 } thread_local pool;
 
-struct PoolEntry
-{
-  void *start;
-  void *end;
-};
-
-struct
-{
-  std::mutex m;
-  int count = 0;
-  struct PoolEntry *list = nullptr;
-} pools;
-
-static void overflow_handler(int signum, siginfo_t *info, void *context)
-{
-  void *fault_address = info->si_addr;
-
-  int pool = -1;
-  for (int i = 0; i < pools.count; i++)
-  {
-    if (pools.list[i].start <= fault_address && pools.list[i].end > fault_address)
-    {
-      pool = i;
-      break;
-    }
-  }
-
-  fprintf(stderr, "Overflow occured\n");
-  fprintf(stderr, "Address: %p\n", fault_address);
-  if (pool >= 0)
-  {
-    fprintf(stderr, "In pool: %d\n", pool);
-  }
-  else
-  {
-    fprintf(stderr, "In pool: unknown\n");
-  }
-
-  exit(EXIT_FAILURE);
-}
-
 static void init_pool(unsigned size)
 {
   auto page_size = sysconf(_SC_PAGESIZE);
   pool.size = size + page_size;
   pool.start = mmap(nullptr, pool.size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
-  if (pool.start == (void *)-1)
-  {
-    perror("Cannot create mmap");
-    exit(EXIT_SUCCESS);
-  }
-
-  if (mprotect(pool.start, page_size, PROT_NONE) != 0)
-  {
-    perror("Cannot protect first page");
-    exit(EXIT_SUCCESS);
-  }
+  CHECK(pool.start != (void *)-1, "Cannot create mmap");
+  CHECK(mprotect(pool.start, page_size, PROT_NONE) == 0, "Cannot protect first page");
 
   pool.current = reinterpret_cast<char *>(pool.start) + pool.size;
 
+  // TODO: Move
   std::unique_lock lock(pools.m);
   pools.list[pools.count++] = {
       .start = pool.start,
@@ -102,11 +45,7 @@ static void init_pool(unsigned size)
 
 static void release_pool()
 {
-  if (munmap(pool.start, pool.size) != 0)
-  {
-    perror("Cannot call munmap");
-    exit(EXIT_SUCCESS);
-  }
+  CHECK(munmap(pool.start, pool.size) == 0, "Cannot call munmap");
 }
 
 static void *alloc_pool(unsigned n)
@@ -130,7 +69,7 @@ static inline Node *create_list(unsigned n)
   return list;
 }
 
-static inline void delete_list(Node *list)
+static inline void delete_list([[maybe_unused]] Node *list)
 {
   release_pool();
 }
@@ -150,11 +89,7 @@ static inline void test(unsigned n, int m)
   sa.sa_sigaction = &overflow_handler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_SIGINFO;
-  if (sigaction(SIGSEGV, &sa, NULL) == -1)
-  {
-    perror("Cannot install SIGSEGV handler");
-    exit(EXIT_SUCCESS);
-  }
+  CHECK(sigaction(SIGSEGV, &sa, NULL) != -1, "Cannot install SIGSEGV handler");
 
   pthread_t *threads = reinterpret_cast<pthread_t *>(malloc(m * sizeof(pthread_t)));
   pools.list = reinterpret_cast<PoolEntry *>(malloc(m * sizeof(PoolEntry)));

@@ -7,34 +7,41 @@
 
 using namespace std;
 
-static void get_usage(struct rusage& usage) {
-  if (getrusage(RUSAGE_SELF, &usage)) {
+static void get_usage(struct rusage &usage)
+{
+  if (getrusage(RUSAGE_SELF, &usage))
+  {
     perror("Cannot get usage");
     exit(EXIT_SUCCESS);
   }
 }
 
-struct Node {
-  Node* next;
+struct Node
+{
+  Node *next;
   unsigned node_id;
 };
 
-static inline Node* create_list(unsigned n) {
-  Node* list = nullptr;
+static inline Node *create_list(unsigned n)
+{
+  Node *list = nullptr;
   for (unsigned i = 0; i < n; i++)
     list = new Node({list, i});
   return list;
 }
 
-static inline void delete_list(Node* list) {
-  while (list) {
-    Node* node = list;
+static inline void delete_list(Node *list)
+{
+  while (list)
+  {
+    Node *node = list;
     list = list->next;
     delete node;
   }
 }
 
-static inline void test(unsigned n) {
+static inline void test(unsigned n)
+{
   struct rusage start, finish;
   get_usage(start);
   delete_list(create_list(n));
@@ -54,7 +61,8 @@ static inline void test(unsigned n) {
        << overhead << "%\n";
 }
 
-int main(const int argc, const char* argv[]) {
+int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[])
+{
   test(10000000);
   return EXIT_SUCCESS;
 }
