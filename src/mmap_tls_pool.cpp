@@ -36,11 +36,7 @@ static void init_pool(unsigned size)
 
   pool.current = reinterpret_cast<char *>(pool.start) + pool.size;
 
-  // TODO: Move
-  std::unique_lock lock(pools.m);
-  pools.list[pools.count++] = {
-      .start = pool.start,
-      .end = reinterpret_cast<char *>(pool.start) + pool.size};
+  add_pool(pool.start, reinterpret_cast<char *>(pool.start) + pool.size);
 }
 
 static void release_pool()
@@ -85,15 +81,9 @@ static inline void test(unsigned n, int m)
   struct rusage start, finish;
   get_usage(start);
 
-  struct sigaction sa = {};
-  sa.sa_sigaction = &overflow_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_SIGINFO;
-  CHECK(sigaction(SIGSEGV, &sa, NULL) != -1, "Cannot install SIGSEGV handler");
+  init_handler(m);
 
   pthread_t *threads = reinterpret_cast<pthread_t *>(malloc(m * sizeof(pthread_t)));
-  pools.list = reinterpret_cast<PoolEntry *>(malloc(m * sizeof(PoolEntry)));
-
   for (int i = 0; i < m; i++)
   {
     pthread_create(&threads[i], NULL, test_handler, reinterpret_cast<void *>(n));

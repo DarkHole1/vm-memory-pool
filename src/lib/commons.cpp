@@ -22,8 +22,12 @@ struct
 {
     std::mutex m;
     int count = 0;
+    int max = 0;
     struct PoolEntry *list = nullptr;
 } pools;
+
+struct sigaction newsa = {};
+struct sigaction oldsa = {};
 
 const char *DIGIT_TABLE = "0123456789abcdef";
 static void overflow_handler([[maybe_unused]] int signum, siginfo_t *info, [[maybe_unused]] void *context)
@@ -50,7 +54,7 @@ static void overflow_handler([[maybe_unused]] int signum, siginfo_t *info, [[may
 
         for (int i = 0, cur = pool; i < 4; i++, cur /= 10)
         {
-            msg[58 - i] = DIGIT_TABLE[cur % 10];
+            msg[57 - i] = DIGIT_TABLE[cur % 10];
         }
 
         write(STDERR_FILENO, msg, 59);
@@ -58,10 +62,32 @@ static void overflow_handler([[maybe_unused]] int signum, siginfo_t *info, [[may
     }
     else
     {
-        // TODO: Pass down
+        sigaction(signum, &oldsa, NULL);
+        raise(signum);
+        sigaction(signum, &newsa, NULL);
     }
+}
 
-    exit(EXIT_FAILURE);
+void init_handler(int max_pools)
+{
+    newsa.sa_sigaction = &overflow_handler;
+    sigemptyset(&newsa.sa_mask);
+    newsa.sa_flags = SA_SIGINFO;
+    CHECK(sigaction(SIGSEGV, &newsa, &oldsa) != -1, "Cannot install SIGSEGV handler");
+    pools.list = reinterpret_cast<PoolEntry *>(malloc(max_pools * sizeof(PoolEntry)));
+    pools.max = max_pools;
+}
+
+void add_pool(void *start, void *end)
+{
+    std::unique_lock lock(pools.m);
+    auto new_pool_id = pools.count;
+    CHECK(new_pool_id < pools.max, "Too many pools");
+
+    pools.list[new_pool_id] = {
+        .start = start,
+        .end = end};
+    pools.count = new_pool_id + 1;
 }
 
 static void get_usage(struct rusage &usage)

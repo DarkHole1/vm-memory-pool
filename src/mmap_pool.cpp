@@ -34,6 +34,7 @@ static void init_pool(unsigned size)
   CHECK(mprotect(pool.start, page_size, PROT_NONE) == 0, "Cannot protect first page");
 
   pool.current = reinterpret_cast<char *>(pool.start) + pool.size;
+  add_pool(pool.start, reinterpret_cast<char *>(pool.start) + pool.size);
 }
 
 static void release_pool()
@@ -72,11 +73,7 @@ static inline void test(unsigned n)
   struct rusage start, finish;
   get_usage(start);
 
-  struct sigaction sa = {};
-  sa.sa_sigaction = &overflow_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_SIGINFO;
-  CHECK(sigaction(SIGSEGV, &sa, NULL) != -1, "Cannot install SIGSEGV handler");
+  init_handler(1);
 
   delete_list(create_list(n));
 
