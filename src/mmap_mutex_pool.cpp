@@ -25,7 +25,7 @@ struct
 static void init_pool(unsigned size)
 {
   auto page_size = sysconf(_SC_PAGESIZE);
-  pool.size = size + page_size;
+  pool.size = ((size / page_size) + 1) * page_size;
   pool.start = mmap(nullptr, pool.size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
   CHECK(pool.start != (void *)-1, "Cannot create mmap");
