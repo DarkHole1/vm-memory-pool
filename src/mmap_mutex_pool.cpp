@@ -22,24 +22,6 @@ struct
   size_t size;
 } pool;
 
-static void init_pool(unsigned size)
-{
-  auto page_size = sysconf(_SC_PAGESIZE);
-  pool.size = ((size / page_size) + 1) * page_size;
-  pool.start = mmap(nullptr, pool.size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-
-  CHECK(pool.start != (void *)-1, "Cannot create mmap");
-  CHECK(mprotect(pool.start, page_size, PROT_NONE) == 0, "Cannot protect first page");
-
-  pool.current = reinterpret_cast<char *>(pool.start) + pool.size;
-  add_pool(pool.start, reinterpret_cast<char *>(pool.start) + pool.size);
-}
-
-static void release_pool()
-{
-  CHECK(munmap(pool.start, pool.size) == 0, "Cannot call munmap");
-}
-
 static inline void *alloc_pool(unsigned n)
 {
   std::unique_lock lock(pool.m);
@@ -77,7 +59,7 @@ static inline void test(unsigned n, int m)
 
   init_handler(1);
 
-  init_pool(n * m * sizeof(Node) + m * sizeof(pthread_t));
+  init_pool(n * m * sizeof(Node) + m * sizeof(pthread_t), pool);
 
   pthread_t *threads = reinterpret_cast<pthread_t *>(alloc_pool(m * sizeof(pthread_t)));
 
@@ -91,7 +73,7 @@ static inline void test(unsigned n, int m)
     pthread_join(threads[i], NULL);
   }
 
-  release_pool();
+  release_pool(pool);
 
   get_usage(finish);
 

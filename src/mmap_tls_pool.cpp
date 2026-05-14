@@ -25,25 +25,6 @@ struct
   size_t size;
 } thread_local pool;
 
-static void init_pool(unsigned size)
-{
-  auto page_size = sysconf(_SC_PAGESIZE);
-  pool.size = ((size / page_size) + 1) * page_size;
-  pool.start = mmap(nullptr, pool.size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-
-  CHECK(pool.start != (void *)-1, "Cannot create mmap");
-  CHECK(mprotect(pool.start, page_size, PROT_NONE) == 0, "Cannot protect first page");
-
-  pool.current = reinterpret_cast<char *>(pool.start) + pool.size;
-
-  add_pool(pool.start, reinterpret_cast<char *>(pool.start) + pool.size);
-}
-
-static void release_pool()
-{
-  CHECK(munmap(pool.start, pool.size) == 0, "Cannot call munmap");
-}
-
 static void *alloc_pool(unsigned n)
 {
   auto result = reinterpret_cast<char *>(pool.current) - n;
@@ -53,7 +34,7 @@ static void *alloc_pool(unsigned n)
 
 static inline Node *create_list(unsigned n)
 {
-  init_pool(n * sizeof(Node));
+  init_pool(n * sizeof(Node), pool);
 
   Node *list = nullptr;
   for (unsigned i = 0; i < n; i++)
@@ -67,7 +48,7 @@ static inline Node *create_list(unsigned n)
 
 static inline void delete_list([[maybe_unused]] Node *list)
 {
-  release_pool();
+  release_pool(pool);
 }
 
 static inline void *test_handler(void *n)
