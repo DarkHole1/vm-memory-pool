@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <mutex>
+#include <atomic>
 #include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -22,7 +23,7 @@ struct PoolEntry
 struct
 {
     std::mutex m;
-    int count = 0;
+    std::atomic<int> count = 0;
     int max = 0;
     struct PoolEntry *list = nullptr;
 } pools;
@@ -82,13 +83,13 @@ void init_handler(int max_pools)
 void add_pool(void *start, void *end)
 {
     std::unique_lock lock(pools.m);
-    auto new_pool_id = pools.count;
+    auto new_pool_id = pools.count.load();
     CHECK(new_pool_id < pools.max, "Too many pools");
 
     pools.list[new_pool_id] = {
         .start = start,
         .end = end};
-    pools.count = new_pool_id + 1;
+    pools.count.store(new_pool_id + 1, std::memory_order_release);
 }
 
 template <class T>
