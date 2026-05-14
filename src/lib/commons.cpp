@@ -37,7 +37,7 @@ static void overflow_handler([[maybe_unused]] int signum, siginfo_t *info, [[may
     void *fault_address = info->si_addr;
 
     int pool = -1;
-    for (int i = 0; i < pools.count; i++)
+    for (int i = 0; i < pools.count.load(std::memory_order_acquire); i++)
     {
         if (pools.list[i].start <= fault_address && pools.list[i].end > fault_address)
         {
