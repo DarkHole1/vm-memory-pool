@@ -16,6 +16,7 @@
 
 struct PoolEntry
 {
+    std::atomic<bool> is_used;
     void *start;
     void *end;
 };
@@ -24,6 +25,7 @@ struct
 {
     std::mutex m;
     std::atomic<int> count = 0;
+    std::atomic<int> used_count = 0;
     int max = 0;
     struct PoolEntry *list = nullptr;
 } pools;
@@ -36,15 +38,18 @@ static void overflow_handler([[maybe_unused]] int signum, siginfo_t *info, [[may
 {
     void *fault_address = info->si_addr;
 
+    pools.used_count.fetch_add(1, std::memory_order_acquire);
     int pool = -1;
     for (int i = 0; i < pools.count.load(std::memory_order_acquire); i++)
     {
-        if (pools.list[i].start <= fault_address && pools.list[i].end > fault_address)
+        PoolEntry &entry = pools.list[i];
+        if (entry.is_used.load(std::memory_order_acquire) && entry.start <= fault_address && entry.end > fault_address)
         {
             pool = i;
             break;
         }
     }
+    pools.used_count.fetch_sub(1, std::memory_order_release);
 
     if (pool >= 0)
     {
@@ -83,13 +88,38 @@ void init_handler(int max_pools)
 void add_pool(void *start, void *end)
 {
     std::unique_lock lock(pools.m);
-    auto new_pool_id = pools.count.load();
-    CHECK(new_pool_id < pools.max, "Too many pools");
+    // Do not allocate while handler is active
+    while (pools.used_count != 0)
+        ;
 
-    pools.list[new_pool_id] = {
-        .start = start,
-        .end = end};
-    pools.count.store(new_pool_id + 1, std::memory_order_release);
+    for (int i = 0; i < pools.max; i++)
+    {
+        PoolEntry &entry = pools.list[i];
+        if (!entry.is_used)
+        {
+            entry.start = start;
+            entry.end = end;
+            entry.is_used.store(true, std::memory_order_release);
+            return;
+        }
+    }
+
+    CHECK(false, "Too many pools");
+}
+
+void remove_pool(void *start)
+{
+    std::unique_lock lock(pools.m);
+    for (int i = 0; i < pools.max; i++)
+    {
+        PoolEntry &entry = pools.list[i];
+        if (entry.is_used && entry.start == start)
+        {
+            entry.is_used.store(false, std::memory_order_release);
+            return;
+        }
+    }
+    CHECK(false, "Removing non-existing pool");
 }
 
 template <class T>
@@ -110,6 +140,7 @@ static void init_pool(unsigned size, T &pool)
 template <class T>
 static void release_pool(T &pool)
 {
+    remove_pool(pool.start);
     CHECK(munmap(pool.start, pool.size) == 0, "Cannot call munmap");
 };
 
