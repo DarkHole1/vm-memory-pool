@@ -7,7 +7,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/mman.h>
-#include "lib/commons.cpp"
+#include "lib/commons.hpp"
 
 using namespace std;
 
