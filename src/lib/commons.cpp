@@ -11,18 +11,19 @@ static void overflow_handler([[maybe_unused]] int signum, siginfo_t *info, [[may
 {
     void *fault_address = info->si_addr;
 
-    pools.used_count.fetch_add(1, std::memory_order_acquire);
     int pool = -1;
-    for (int i = 0; i < pools.count.load(std::memory_order_acquire); i++)
+    for (int i = 0; i < pools.max; i++)
     {
         PoolEntry &entry = pools.list[i];
-        if (entry.is_used.load(std::memory_order_acquire) && entry.start <= fault_address && entry.end > fault_address)
+        void *e_start = entry.start;
+        void *e_end = entry.end;
+        if (e_start != nullptr && e_end != nullptr && 
+            entry.start <= fault_address && entry.end > fault_address)
         {
             pool = i;
             break;
         }
     }
-    pools.used_count.fetch_sub(1, std::memory_order_release);
 
     if (pool >= 0)
     {
@@ -56,43 +57,60 @@ void init_handler(int max_pools)
     CHECK(sigaction(SIGSEGV, &newsa, &oldsa) != -1, "Cannot install SIGSEGV handler");
     pools.list = reinterpret_cast<PoolEntry *>(malloc(max_pools * sizeof(PoolEntry)));
     pools.max = max_pools;
+    for (int i = 0; i < max_pools; i++)
+    {
+        pools.list[i].start = nullptr;
+        pools.list[i].end = nullptr;
+    }
 }
 
 void add_pool(void *start, void *end)
 {
-    std::unique_lock lock(pools.m);
-    // Do not allocate while handler is active
-    while (pools.used_count != 0)
-        ;
-
-    for (int i = 0; i < pools.max; i++)
+    NEXT_LOOP:
+    while (true)
     {
-        PoolEntry &entry = pools.list[i];
-        if (!entry.is_used)
+        for (int i = 0; i < pools.max; i++)
         {
-            entry.start = start;
-            entry.end = end;
-            entry.is_used.store(true, std::memory_order_release);
-            return;
-        }
-    }
+            auto &entry = pools.list[i];
+            void *e_start = entry.start.load();
+            void *e_end = entry.end.load();
+            if (e_start == nullptr && e_end == nullptr)
+            {
+                if(!entry.end.compare_exchange_weak(e_end, end)) {
+                    goto NEXT_LOOP;
+                }
 
-    CHECK(false, "Too many pools");
+                entry.start.store(start);
+                return;
+            }
+        }
+        
+        CHECK(false, "Too many pools");
+    }
 }
 
 void remove_pool(void *start)
 {
-    std::unique_lock lock(pools.m);
-    for (int i = 0; i < pools.max; i++)
+    NEXT_LOOP:
+    while (true)
     {
-        PoolEntry &entry = pools.list[i];
-        if (entry.is_used && entry.start == start)
+        for (int i = 0; i < pools.max; i++)
         {
-            entry.is_used.store(false, std::memory_order_release);
-            return;
+            auto &entry = pools.list[i];
+            void *e_start = entry.start.load();
+            if (e_start == start)
+            {
+                if(!entry.start.compare_exchange_weak(e_start, nullptr)) {
+                    goto NEXT_LOOP;
+                }
+
+                entry.end.store(nullptr);
+                return;
+            }
         }
+        
+        CHECK(false, "Removing non-existing pool");
     }
-    CHECK(false, "Removing non-existing pool");
 }
 
 void get_usage(struct rusage &usage)

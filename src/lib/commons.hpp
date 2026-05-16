@@ -20,16 +20,11 @@
 
 struct PoolEntry
 {
-    std::atomic<bool> is_used;
-    void *start;
-    void *end;
+    std::atomic<void*> start, end;
 };
 
 struct
 {
-    std::mutex m;
-    std::atomic<int> count = 0;
-    std::atomic<int> used_count = 0;
     int max = 0;
     struct PoolEntry *list = nullptr;
 } pools;
