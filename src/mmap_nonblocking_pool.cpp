@@ -60,7 +60,7 @@ static inline void test(unsigned n, int m)
 
   init_handler(1);
 
-  init_pool(n * m * sizeof(Node) + m * sizeof(pthread_t), pool);
+  init_pool(n * m * sizeof(Node) + m * sizeof(pthread_t), max(sizeof(Node), sizeof(pthread_t)), pool);
 
   pthread_t *threads = reinterpret_cast<pthread_t *>(alloc_pool(m * sizeof(pthread_t)));
 

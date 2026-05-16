@@ -33,7 +33,7 @@ static inline void *alloc_pool(unsigned n)
 
 static inline Node *create_list(unsigned n)
 {
-  init_pool(n * sizeof(Node), pool);
+  init_pool(n * sizeof(Node), sizeof(Node), pool);
 
   Node *list = nullptr;
   for (unsigned i = 0; i < n; i++)
