@@ -1,7 +1,7 @@
+#include "commons.hpp"
 #include <iostream>
 #include <atomic>
 #include <signal.h>
-#include "commons.hpp"
 
 static struct sigaction newsa = {};
 static struct sigaction oldsa = {};
